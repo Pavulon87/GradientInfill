@@ -11,7 +11,7 @@ from collections import namedtuple
 from enum import Enum
 from typing import List, Tuple
 
-__version__ = '1.0'
+__version__ = "1.0.1"
 
 
 class InfillType(Enum):
@@ -21,8 +21,8 @@ class InfillType(Enum):
     LINEAR = 2  # linear infill like rectilinear or triangles
 
 
-Point2D = namedtuple('Point2D', 'x y')
-Segment = namedtuple('Segment', 'point1 point2')
+Point2D = namedtuple("Point2D", "x y")
+Segment = namedtuple("Segment", "point1 point2")
 
 # EDIT this section for your creation parameters
 
@@ -34,7 +34,9 @@ INFILL_TYPE = InfillType.SMALL_SEGMENTS
 MAX_FLOW = 350.0  # maximum extrusion flow
 MIN_FLOW = 50.0  # minimum extrusion flow
 GRADIENT_THICKNESS = 6.0  # thickness of the gradient (max to min) in mm
-GRADIENT_DISCRETIZATION = 4.0  # only applicable for linear infills; number of segments within the
+GRADIENT_DISCRETIZATION = (
+    4.0  # only applicable for linear infills; number of segments within the
+)
 # gradient(segmentLength=gradientThickness / gradientDiscretization); use sensible values to not overload the printer
 
 # End edit
@@ -61,7 +63,9 @@ def dist(segment: Segment, point: Point2D) -> float:
     px = segment.point2.x - segment.point1.x
     py = segment.point2.y - segment.point1.y
     norm = px * px + py * py
-    u = ((point.x - segment.point1.x) * px + (point.y - segment.point1.y) * py) / float(norm)
+    u = ((point.x - segment.point1.x) * px + (point.y - segment.point1.y) * py) / float(
+        norm
+    )
     if u > 1:
         u = 1
     elif u < 0:
@@ -97,7 +101,10 @@ def min_distance_from_segment(segment: Segment, segments: List[Segment]) -> floa
     Returns:
         float: the smallest distance from the midpoint of ``segment`` to the nearest segment in the list
     """
-    middlePoint = Point2D((segment.point1.x + segment.point2.x) / 2, (segment.point1.y + segment.point2.y) / 2)
+    middlePoint = Point2D(
+        (segment.point1.x + segment.point2.x) / 2,
+        (segment.point1.y + segment.point2.y) / 2,
+    )
 
     return min(dist(s, middlePoint) for s in segments)
 
@@ -114,13 +121,13 @@ def getXY(currentLine: str) -> Point2D:
     Returns:
         Point2D: the parsed coordinates
     """
-    searchX = re.search(r"X(\d*\.?\d*)", currentLine)
-    searchY = re.search(r"Y(\d*\.?\d*)", currentLine)
+    searchX = re.search(r"X(\-?\d*\.?\d*)", currentLine)
+    searchY = re.search(r"Y(\-?\d*\.?\d*)", currentLine)
     if searchX and searchY:
         elementX = searchX.group(1)
         elementY = searchY.group(1)
     else:
-        raise SyntaxError(f'Gcode file parsing error for line {currentLine}')
+        raise SyntaxError(f"Gcode file parsing error for line {currentLine}")
 
     return Point2D(float(elementX), float(elementY))
 
@@ -180,7 +187,9 @@ def is_begin_inner_wall_line(line: str) -> bool:
     Returns:
         bool: True if the line is the start of an inner wall section
     """
-    return line.startswith(";TYPE:WALL-INNER")
+    return line.startswith(";TYPE:Internal perimeter") or line.startswith(
+        ";TYPE:WALL-INNER"
+    )
 
 
 def is_end_inner_wall_line(line: str) -> bool:
@@ -192,7 +201,11 @@ def is_end_inner_wall_line(line: str) -> bool:
     Returns:
         bool: True if the line is the start of an outer wall section
     """
-    return line.startswith(";TYPE:WALL-OUTER")
+    return (
+        line.startswith(";TYPE:External perimeter")
+        or line.startswith(";TYPE:Overhang perimeter")
+        or line.startswith(";TYPE:WALL-OUTER")
+    )
 
 
 def is_extrusion_line(line: str) -> bool:
@@ -216,7 +229,7 @@ def is_begin_infill_segment_line(line: str) -> bool:
     Returns:
         bool: True if the line is the start of an infill section
     """
-    return line.startswith(";TYPE:FILL")
+    return line.startswith(";TYPE:Internal infill") or line.startswith(";TYPE:FILL")
 
 
 def process_gcode(
@@ -233,7 +246,9 @@ def process_gcode(
     lastPosition = Point2D(-10000, -10000)
     gradientDiscretizationLength = gradient_thickness / gradient_discretization
 
-    with open(input_file_name, "r") as gcodeFile, open(output_file_name, "w+") as outputFile:
+    with open(input_file_name, "r") as gcodeFile, open(
+        output_file_name, "w+"
+    ) as outputFile:
         for currentLine in gcodeFile:
             writtenToFile = 0
             if is_begin_layer_line(currentLine):
@@ -246,7 +261,10 @@ def process_gcode(
                 perimeterSegments.append(Segment(getXY(currentLine), lastPosition))
 
             if is_end_inner_wall_line(currentLine):
-                currentSection = Section.NOTHING
+                if perimeterSegments:
+                    currentSection = Section.NOTHING
+                else:
+                    currentSection = Section.INNER_WALL
 
             if is_begin_infill_segment_line(currentLine):
                 currentSection = Section.INFILL
@@ -261,56 +279,96 @@ def process_gcode(
                     if searchSpeed:
                         outputFile.write("G1 F{}\n".format(searchSpeed.group(1)))
                     else:
-                        raise SyntaxError(f'Gcode file parsing error for line {currentLine}')
-                if "E" in currentLine and "G1" in currentLine and " X" in currentLine and "Y" in currentLine:
+                        raise SyntaxError(
+                            f"Gcode file parsing error for line {currentLine}"
+                        )
+                if (
+                    "E" in currentLine
+                    and "G1" in currentLine
+                    and " X" in currentLine
+                    and "Y" in currentLine
+                ):
                     currentPosition = getXY(currentLine)
                     splitLine = currentLine.split(" ")
 
                     if infill_type == InfillType.LINEAR:
                         # find extrusion length
                         for element in splitLine:
+                            if ";" in element:
+                                break
                             if "E" in element:
                                 extrusionLength = float(element[1:])
-                        segmentLength = get_points_distance(lastPosition, currentPosition)
+                                break
+                        segmentLength = get_points_distance(
+                            lastPosition, currentPosition
+                        )
                         segmentSteps = segmentLength / gradientDiscretizationLength
                         extrusionLengthPerSegment = extrusionLength / segmentSteps
                         segmentDirection = Point2D(
-                            (currentPosition.x - lastPosition.x) / segmentLength * gradientDiscretizationLength,
-                            (currentPosition.y - lastPosition.y) / segmentLength * gradientDiscretizationLength,
+                            (currentPosition.x - lastPosition.x)
+                            / segmentLength
+                            * gradientDiscretizationLength,
+                            (currentPosition.y - lastPosition.y)
+                            / segmentLength
+                            * gradientDiscretizationLength,
                         )
                         if segmentSteps >= 2:
                             for step in range(int(segmentSteps)):
                                 segmentEnd = Point2D(
-                                    lastPosition.x + segmentDirection.x, lastPosition.y + segmentDirection.y
+                                    lastPosition.x + segmentDirection.x,
+                                    lastPosition.y + segmentDirection.y,
                                 )
                                 shortestDistance = min_distance_from_segment(
                                     Segment(lastPosition, segmentEnd), perimeterSegments
                                 )
                                 if shortestDistance < gradient_thickness:
-                                    segmentExtrusion = extrusionLengthPerSegment * mapRange(
-                                        (0, gradient_thickness), (max_flow / 100, min_flow / 100), shortestDistance
+                                    segmentExtrusion = (
+                                        extrusionLengthPerSegment
+                                        * mapRange(
+                                            (0, gradient_thickness),
+                                            (max_flow / 100, min_flow / 100),
+                                            shortestDistance,
+                                        )
                                     )
                                 else:
-                                    segmentExtrusion = extrusionLengthPerSegment * min_flow / 100
+                                    segmentExtrusion = (
+                                        extrusionLengthPerSegment * min_flow / 100
+                                    )
 
-                                outputFile.write(get_extrusion_command(segmentEnd.x, segmentEnd.y, segmentExtrusion))
+                                outputFile.write(
+                                    get_extrusion_command(
+                                        segmentEnd.x, segmentEnd.y, segmentExtrusion
+                                    )
+                                )
 
                                 lastPosition = segmentEnd
                             # MissingSegment
-                            segmentLengthRatio = get_points_distance(lastPosition, currentPosition) / segmentLength
+                            segmentLengthRatio = (
+                                get_points_distance(lastPosition, currentPosition)
+                                / segmentLength
+                            )
 
                             outputFile.write(
                                 get_extrusion_command(
                                     currentPosition.x,
                                     currentPosition.y,
-                                    segmentLengthRatio * extrusionLength * max_flow / 100,
+                                    segmentLengthRatio
+                                    * extrusionLength
+                                    * max_flow
+                                    / 100,
                                 )
                             )
                         else:
                             outPutLine = ""
                             for element in splitLine:
                                 if "E" in element:
-                                    outPutLine = outPutLine + "E" + str(round(extrusionLength * max_flow / 100, 5))
+                                    outPutLine = (
+                                        outPutLine
+                                        + "E"
+                                        + str(
+                                            round(extrusionLength * max_flow / 100, 5)
+                                        )
+                                    )
                                 else:
                                     outPutLine = outPutLine + element + " "
                             outPutLine = outPutLine + "\n"
@@ -328,7 +386,9 @@ def process_gcode(
                             for element in splitLine:
                                 if "E" in element:
                                     newE = float(element[1:]) * mapRange(
-                                        (0, gradient_thickness), (max_flow / 100, min_flow / 100), shortestDistance
+                                        (0, gradient_thickness),
+                                        (max_flow / 100, min_flow / 100),
+                                        shortestDistance,
                                     )
                                     outPutLine = outPutLine + "E" + str(round(newE, 5))
                                 else:
@@ -336,11 +396,13 @@ def process_gcode(
                             outPutLine = outPutLine + "\n"
                             outputFile.write(outPutLine)
                             writtenToFile = 1
-                if ";" in currentLine:
-                    currentSection = Section.NOTHING
 
             # line with move
-            if " X" in currentLine and " Y" in currentLine and ("G1" in currentLine or "G0" in currentLine):
+            if (
+                " X" in currentLine
+                and " Y" in currentLine
+                and ("G1" in currentLine or "G0" in currentLine)
+            ):
                 lastPosition = getXY(currentLine)
 
             # write uneditedLine
@@ -348,7 +410,13 @@ def process_gcode(
                 outputFile.write(currentLine)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     process_gcode(
-        INPUT_FILE_NAME, OUTPUT_FILE_NAME, INFILL_TYPE, MAX_FLOW, MIN_FLOW, GRADIENT_THICKNESS, GRADIENT_DISCRETIZATION
+        INPUT_FILE_NAME,
+        OUTPUT_FILE_NAME,
+        INFILL_TYPE,
+        MAX_FLOW,
+        MIN_FLOW,
+        GRADIENT_THICKNESS,
+        GRADIENT_DISCRETIZATION,
     )
