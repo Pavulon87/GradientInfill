@@ -10,7 +10,14 @@ __version__ = 1.0
 
 import argparse
 import os.path
-from addGradientInfill import process_gcode, InfillType, MIN_FLOW, MAX_FLOW, GRADIENT_THICKNESS, GRADIENT_DISCRETIZATION
+from addGradientInfill import (
+    process_gcode,
+    InfillType,
+    MIN_FLOW,
+    MAX_FLOW,
+    GRADIENT_THICKNESS,
+    GRADIENT_DISCRETIZATION,
+)
 
 SCRIPT_DESCRIPTION = (
     "This script allows adding gradient infill to a gcode file produced by Cura slicer.\n"
@@ -21,8 +28,8 @@ SCRIPT_DESCRIPTION = (
 
 INFILL_TYPE_HELP = (
     "The infill method used to create the input gcode.\n"
-    "Set 1 or \"SMALL_SEGMENTS\" for an infill method with small segments like honeycomb or gyroid.\n"
-    "Set 2 or \"LINEAR\" for linear infill like rectilinear or triangles. Default: SMALL_SEGMENTS"
+    'Set 1 or "SMALL_SEGMENTS" for an infill method with small segments like honeycomb or gyroid.\n'
+    'Set 2 or "LINEAR" for linear infill like rectilinear or triangles. Default: SMALL_SEGMENTS'
 )
 
 GRADIENT_DISCRETIZATION_HELP = (
@@ -30,6 +37,8 @@ GRADIENT_DISCRETIZATION_HELP = (
     "(segmentLength=gradientThickness / gradientDiscretization); use sensible values to not "
     "overload the printer. Default {0}".format(GRADIENT_DISCRETIZATION)
 )
+
+OVERWRITE_HELP = "overwrite source file instead of writing to new one"
 
 
 def arg_to_infill_type(arg: str) -> InfillType:
@@ -50,15 +59,32 @@ def arg_to_infill_type(arg: str) -> InfillType:
     raise argparse.ArgumentTypeError("Illegal infill type: ", arg)
 
 
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    elif v.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected.")
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog="GradientInfillCLI", description=SCRIPT_DESCRIPTION)
+    parser = argparse.ArgumentParser(
+        prog="GradientInfillCLI", description=SCRIPT_DESCRIPTION
+    )
     parser.add_argument(
-        "-i", "--input", type=argparse.FileType('r'), required=True, help="Path to the input gcode file"
+        "-i",
+        "--input",
+        type=argparse.FileType("r"),
+        required=True,
+        help="Path to the input gcode file",
     )
     parser.add_argument(
         "-o",
         "--output",
-        type=argparse.FileType('w+'),
+        type=argparse.FileType("w+"),
         required=False,
         help="Path to the output gcode file to be created",
     )
@@ -88,10 +114,24 @@ if __name__ == "__main__":
         type=int,
         required=False,
         default=GRADIENT_THICKNESS,
-        help="thickness of the gradient (max to min) in mm, default {0}".format(GRADIENT_THICKNESS),
+        help="thickness of the gradient (max to min) in mm, default {0}".format(
+            GRADIENT_THICKNESS
+        ),
     )
     parser.add_argument(
-        "--discretization", type=int, required=False, default=GRADIENT_DISCRETIZATION, help=GRADIENT_DISCRETIZATION_HELP
+        "--discretization",
+        type=int,
+        required=False,
+        default=GRADIENT_DISCRETIZATION,
+        help=GRADIENT_DISCRETIZATION_HELP,
+    )
+    parser.add_argument(
+        "--overwrite",
+        type=str2bool,
+        nargs="?",
+        const=True,
+        default=False,
+        help=OVERWRITE_HELP,
     )
     args = parser.parse_args()
 
@@ -106,5 +146,12 @@ if __name__ == "__main__":
         output_path = args.output.name
 
     process_gcode(
-        input_path, output_path, args.infill_type, args.max_flow, args.min_flow, args.thickness, args.discretization
+        input_path,
+        output_path,
+        args.infill_type,
+        args.max_flow,
+        args.min_flow,
+        args.thickness,
+        args.discretization,
+        args.overwrite,
     )

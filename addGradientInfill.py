@@ -7,6 +7,7 @@ Author: Stefan Hermann - CNC Kitchen
 Version: 1.0
 """
 import re
+import os, shutil
 from collections import namedtuple
 from enum import Enum
 from typing import List, Tuple
@@ -240,11 +241,17 @@ def process_gcode(
     min_flow: float,
     gradient_thickness: float,
     gradient_discretization: float,
+    overwrite: bool,
 ) -> None:
     """Parse input Gcode file and modify infill portions with an extrusion width gradient."""
     currentSection = Section.NOTHING
     lastPosition = Point2D(-10000, -10000)
     gradientDiscretizationLength = gradient_thickness / gradient_discretization
+
+    if overwrite:
+        shutil.copy(input_file_name, input_file_name + ".bak")
+        output_file_name = input_file_name
+        input_file_name = input_file_name + ".bak"
 
     with open(input_file_name, "r") as gcodeFile, open(
         output_file_name, "w+"
@@ -384,6 +391,8 @@ def process_gcode(
                         outPutLine = ""
                         if shortestDistance < gradient_thickness:
                             for element in splitLine:
+                                if ";" in element:
+                                    break
                                 if "E" in element:
                                     newE = float(element[1:]) * mapRange(
                                         (0, gradient_thickness),
@@ -408,6 +417,9 @@ def process_gcode(
             # write uneditedLine
             if writtenToFile == 0:
                 outputFile.write(currentLine)
+
+    if overwrite:
+        os.remove(input_file_name)
 
 
 if __name__ == "__main__":
