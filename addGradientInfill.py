@@ -32,8 +32,8 @@ OUTPUT_FILE_NAME = "BOWDEN_cloverleaf_wHole_gyroid.gcode"
 
 INFILL_TYPE = InfillType.SMALL_SEGMENTS
 
-MAX_FLOW = 350.0  # maximum extrusion flow
-MIN_FLOW = 50.0  # minimum extrusion flow
+MAX_FLOW = 150.0  # maximum extrusion flow
+MIN_FLOW = 75.0  # minimum extrusion flow
 GRADIENT_THICKNESS = 6.0  # thickness of the gradient (max to min) in mm
 GRADIENT_DISCRETIZATION = (
     4.0  # only applicable for linear infills; number of segments within the
@@ -64,6 +64,9 @@ def dist(segment: Segment, point: Point2D) -> float:
     px = segment.point2.x - segment.point1.x
     py = segment.point2.y - segment.point1.y
     norm = px * px + py * py
+    if norm == 0:
+        return 99999999999
+
     u = ((point.x - segment.point1.x) * px + (point.y - segment.point1.y) * py) / float(
         norm
     )
@@ -259,27 +262,51 @@ def process_gcode(
         for currentLine in gcodeFile:
             writtenToFile = 0
             if is_begin_layer_line(currentLine):
+                # print("Begin layer: {}".format(currentLine))
                 perimeterSegments = []
 
             if is_begin_inner_wall_line(currentLine):
+                # print("Begin inner wall: {}".format(currentLine))
                 currentSection = Section.INNER_WALL
 
             if currentSection == Section.INNER_WALL and is_extrusion_line(currentLine):
+                # print("Extrusion line: {}".format(currentLine))
                 perimeterSegments.append(Segment(getXY(currentLine), lastPosition))
 
             if is_end_inner_wall_line(currentLine):
+                # print("End inner wall: {}".format(currentLine))
                 if perimeterSegments:
                     currentSection = Section.NOTHING
                 else:
                     currentSection = Section.INNER_WALL
 
             if is_begin_infill_segment_line(currentLine):
+                # print("Begin infill: {}".format(currentLine))
                 currentSection = Section.INFILL
                 outputFile.write(currentLine)
                 continue
 
+            if currentLine.startswith(";WIDTH"):
+                outputFile.write(
+                    ";IGNORE{}".format(currentLine.replace(";WIDTH", "_WIDTH"))
+                )
+                continue
+
+            # if currentSection == Section.INFILL and len(perimeterSegments) > 0:
             if currentSection == Section.INFILL:
-                if "F" in currentLine and "G1" in currentLine:
+                # print("Infill line: {}".format(currentLine))
+                if len(perimeterSegments) == 0:
+                    currentSection = Section.NOTHING
+
+                # if currentLine.startswith(";"):
+                #     writtenToFile = 0
+                #     continue
+
+                if (
+                    len(perimeterSegments)
+                    and "F" in currentLine
+                    and "G1" in currentLine
+                ):
                     # python3.6+ f-string variant:
                     # outputFile.write("G1 F{ re.search(r"F(\d*\.?\d*)", currentLine).group(1)) }\n"
                     searchSpeed = re.search(r"F(\d*\.?\d*)", currentLine)
@@ -290,11 +317,12 @@ def process_gcode(
                             f"Gcode file parsing error for line {currentLine}"
                         )
                 if (
-                    "E" in currentLine
+                    " E" in currentLine
                     and "G1" in currentLine
                     and " X" in currentLine
-                    and "Y" in currentLine
+                    and " Y" in currentLine
                 ):
+                    extrusionLength = 0
                     currentPosition = getXY(currentLine)
                     splitLine = currentLine.split(" ")
 
@@ -304,6 +332,7 @@ def process_gcode(
                             if ";" in element:
                                 break
                             if "E" in element:
+                                # print("Extrusion length: {}".format(element))
                                 extrusionLength = float(element[1:])
                                 break
                         segmentLength = get_points_distance(
@@ -405,6 +434,8 @@ def process_gcode(
                             outPutLine = outPutLine + "\n"
                             outputFile.write(outPutLine)
                             writtenToFile = 1
+                # else:
+                #     print("currentLine: {}".format(currentLine))
 
             # line with move
             if (
